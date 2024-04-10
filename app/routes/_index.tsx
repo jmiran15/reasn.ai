@@ -1,141 +1,365 @@
-import type { MetaFunction } from "@remix-run/node";
-import { Link } from "@remix-run/react";
+const Markdown = lazy(() => import("~/components/ui/markdown"));
 
-import { useOptionalUser } from "~/utils";
+import {
+  json,
+  type LoaderFunctionArgs,
+  type MetaFunction,
+} from "@remix-run/node";
+import { Dialog, Transition } from "@headlessui/react";
+import { useLoaderData } from "@remix-run/react";
+import cuid from "cuid";
 
-export const meta: MetaFunction = () => [{ title: "Remix Notes" }];
+import {
+  PlaygroundChat,
+  PlaygroundChunk,
+  PlaygroundMessage,
+} from "@prisma/client";
+
+import { formatDistanceToNow, format } from "date-fns";
+import {
+  useEffect,
+  useState,
+  useRef,
+  Fragment,
+  Suspense,
+  lazy,
+  useMemo,
+} from "react";
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { getDocuments } from "~/utils/webscraper/scrape";
+import { Document } from "~/utils/types";
+import {
+  createManyPlaygroundChunks,
+  getAllPlaygroundChunks,
+} from "~/models/playgroundchunk.server";
+import { getPlaygroundChat } from "~/models/playgroundchat.server";
+import { ActionFunctionArgs, json } from "@remix-run/node";
+import { Form, useFetcher, useLoaderData } from "@remix-run/react";
+import ChatInput from "~/components/chat/chat-input";
+
+import { ScrollArea } from "~/components/ui/scroll-area";
+import { ChatAction } from "~/components/chat/chat-action";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "~/components/ui/hover-card";
+import { useToast } from "~/components/ui/use-toast";
+import { cn } from "~/lib/utils";
+import { copyToClipboard } from "~/utils/clipboard";
+import { Separator } from "~/components/ui/separator";
+import { Clipboard } from "lucide-react";
+import { useScrollToBottom } from "~/hooks/useScroll";
+import { useMobileScreen } from "~/utils/mobile";
+import { Loading } from "~/components/ui/loading";
+import OpenAI from "openai";
+
+import { createUserSession, getUserId } from "~/session.server";
+
+export const meta: MetaFunction = () => [{ title: "Reasn.ai" }];
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const userId = await getUserId(request);
+
+  if (!userId) {
+    return await createUserSession({ request, userId: cuid() });
+  }
+
+  return json({ userId });
+
+  const messages = await getPlaygroundChat();
+  const allPlaygroundChunks = await getAllPlaygroundChunks();
+  console.log("playgroundChat", messages);
+  console.log("allPlaygroundChunks", allPlaygroundChunks);
+
+  return json({
+    messages,
+    allPlaygroundChunks,
+  });
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const formData = await request.formData();
+  const action = String(formData.get("action"));
+
+  switch (action) {
+    case "getLinks": {
+      const url = String(formData.get("url"));
+      return json({ links: await getLinks(url) });
+    }
+    case "scrapeLinks": {
+      const links = JSON.parse(String(formData.get("links")));
+
+      const scrapedDocuments = await scrapeLinks(links);
+      console.log("scrapedDocuments", scrapedDocuments);
+
+      // 43 seconds ??
+      const chunks = await processRawDocuments(scrapedDocuments);
+
+      return json({ links: [] });
+    }
+    default: {
+      throw new Error(`Invalid action: ${action}`);
+    }
+  }
+};
 
 export default function Index() {
-  const user = useOptionalUser();
-  return (
-    <main className="relative min-h-screen bg-white sm:flex sm:items-center sm:justify-center">
-      <div className="relative sm:pb-16 sm:pt-8">
-        <div className="mx-auto max-w-7xl sm:px-6 lg:px-8">
-          <div className="relative shadow-xl sm:overflow-hidden sm:rounded-2xl">
-            <div className="absolute inset-0">
-              <img
-                className="h-full w-full object-cover"
-                src="https://user-images.githubusercontent.com/1500684/158276320-c46b661b-8eff-4a4d-82c6-cf296c987a12.jpg"
-                alt="BB King playing blues on his Gibson 'Lucille' guitar"
-              />
-              <div className="absolute inset-0 bg-[color:rgba(27,167,254,0.5)] mix-blend-multiply" />
-            </div>
-            <div className="relative px-4 pb-8 pt-16 sm:px-6 sm:pb-14 sm:pt-24 lg:px-8 lg:pb-20 lg:pt-32">
-              <h1 className="text-center text-6xl font-extrabold tracking-tight sm:text-8xl lg:text-9xl">
-                <span className="block uppercase text-blue-500 drop-shadow-md">
-                  Blues Stack
-                </span>
-              </h1>
-              <p className="mx-auto mt-6 max-w-lg text-center text-xl text-white sm:max-w-3xl">
-                Check the README.md file for instructions on how to get this
-                project deployed.
-              </p>
-              <div className="mx-auto mt-10 max-w-sm sm:flex sm:max-w-none sm:justify-center">
-                {user ? (
-                  <Link
-                    to="/notes"
-                    className="flex items-center justify-center rounded-md border border-transparent bg-white px-4 py-3 text-base font-medium text-blue-700 shadow-sm hover:bg-blue-50 sm:px-8"
-                  >
-                    View Notes for {user.email}
-                  </Link>
-                ) : (
-                  <div className="space-y-4 sm:mx-auto sm:inline-grid sm:grid-cols-2 sm:gap-5 sm:space-y-0">
-                    <Link
-                      to="/join"
-                      className="flex items-center justify-center rounded-md border border-transparent bg-white px-4 py-3 text-base font-medium text-blue-700 shadow-sm hover:bg-blue-50 sm:px-8"
-                    >
-                      Sign up
-                    </Link>
-                    <Link
-                      to="/login"
-                      className="flex items-center justify-center rounded-md bg-blue-500 px-4 py-3 font-medium text-white hover:bg-blue-600"
-                    >
-                      Log In
-                    </Link>
-                  </div>
-                )}
-              </div>
-              <a href="https://remix.run">
-                <img
-                  src="https://user-images.githubusercontent.com/1500684/158298926-e45dafff-3544-4b69-96d6-d3bcc33fc76a.svg"
-                  alt="Remix"
-                  className="mx-auto mt-16 w-full max-w-[12rem] md:max-w-[16rem]"
-                />
-              </a>
-            </div>
-          </div>
-        </div>
+  const data = useLoaderData<typeof loader>();
 
-        <div className="mx-auto max-w-7xl px-4 py-2 sm:px-6 lg:px-8">
-          <div className="mt-6 flex flex-wrap justify-center gap-8">
-            {[
-              {
-                src: "https://user-images.githubusercontent.com/1500684/157764397-ccd8ea10-b8aa-4772-a99b-35de937319e1.svg",
-                alt: "Fly.io",
-                href: "https://fly.io",
-              },
-              {
-                src: "https://user-images.githubusercontent.com/1500684/158238105-e7279a0c-1640-40db-86b0-3d3a10aab824.svg",
-                alt: "PostgreSQL",
-                href: "https://www.postgresql.org/",
-              },
-              {
-                src: "https://user-images.githubusercontent.com/1500684/157764484-ad64a21a-d7fb-47e3-8669-ec046da20c1f.svg",
-                alt: "Prisma",
-                href: "https://prisma.io",
-              },
-              {
-                src: "https://user-images.githubusercontent.com/1500684/157764276-a516a239-e377-4a20-b44a-0ac7b65c8c14.svg",
-                alt: "Tailwind",
-                href: "https://tailwindcss.com",
-              },
-              {
-                src: "https://user-images.githubusercontent.com/1500684/157764454-48ac8c71-a2a9-4b5e-b19c-edef8b8953d6.svg",
-                alt: "Cypress",
-                href: "https://www.cypress.io",
-              },
-              {
-                src: "https://user-images.githubusercontent.com/1500684/157772386-75444196-0604-4340-af28-53b236faa182.svg",
-                alt: "MSW",
-                href: "https://mswjs.io",
-              },
-              {
-                src: "https://user-images.githubusercontent.com/1500684/157772447-00fccdce-9d12-46a3-8bb4-fac612cdc949.svg",
-                alt: "Vitest",
-                href: "https://vitest.dev",
-              },
-              {
-                src: "https://user-images.githubusercontent.com/1500684/157772662-92b0dd3a-453f-4d18-b8be-9fa6efde52cf.png",
-                alt: "Testing Library",
-                href: "https://testing-library.com",
-              },
-              {
-                src: "https://user-images.githubusercontent.com/1500684/157772934-ce0a943d-e9d0-40f8-97f3-f464c0811643.svg",
-                alt: "Prettier",
-                href: "https://prettier.io",
-              },
-              {
-                src: "https://user-images.githubusercontent.com/1500684/157772990-3968ff7c-b551-4c55-a25c-046a32709a8e.svg",
-                alt: "ESLint",
-                href: "https://eslint.org",
-              },
-              {
-                src: "https://user-images.githubusercontent.com/1500684/157773063-20a0ed64-b9f8-4e0b-9d1e-0b65a3d4a6db.svg",
-                alt: "TypeScript",
-                href: "https://typescriptlang.org",
-              },
-            ].map((img) => (
-              <a
-                key={img.href}
-                href={img.href}
-                className="flex h-16 w-32 justify-center p-1 grayscale transition hover:grayscale-0 focus:grayscale-0"
-              >
-                <img alt={img.alt} src={img.src} className="object-contain" />
-              </a>
-            ))}
+  console.log(data?.userId);
+
+  return <div>main</div>;
+}
+
+export const CHAT_PAGE_SIZE = 15;
+
+export default function Playground() {
+  //   if (typeof window === "undefined") return null;
+
+  //   const { sessionId } = useSessionId();
+  const [chunks, setChunks] = useState<PlaygroundChunk[]>([]);
+  const [chat, setChat] = useState<PlaygroundChat | null>(null);
+  const [messages, setMessages] = useState<PlaygroundMessage[]>([]);
+
+  useEffect(() => {
+    // if (sessionId) {
+    //   Promise.all([
+    //     getPlaygroundChunksBySessionId(sessionId),
+    //     getPlaygroundChatBySessionId(sessionId),
+    //   ]).then(([chunks, chat]) => {
+    //     setChunks(chunks);
+    //     setChat(chat);
+    //   });
+    // }
+  }, []);
+
+  return (
+    <div>
+      <ChunkExtraction chunks={chunks} setChunks={setChunks} />
+      <Chat />
+    </div>
+  );
+}
+
+function ChunkExtraction({
+  chunks,
+  setChunks,
+}: {
+  chunks: PlaygroundChunk[];
+  setChunks: (value: PlaygroundChunk[]) => void;
+}) {
+  //   const { clearSessionId } = useSessionId();
+  const [links, setLinks] = useState<[] | Document[]>([]);
+  const [isScrapingWebsiteModalOpen, setIsScrapingWebsiteModalOpen] =
+    useState(false);
+  const [isViewingChunksModalOpen, setIsViewingChunksModalOpen] =
+    useState(false);
+
+  const fetcher = useFetcher();
+
+  useEffect(() => {
+    if (fetcher.formData) {
+      const action = fetcher.formData.get("action");
+
+      if (action === "getLinks") {
+        if (fetcher.data) {
+          setLinks(fetcher.data.links);
+          setIsScrapingWebsiteModalOpen(true);
+        }
+      } else if (action === "scrapeLinks") {
+        if (fetcher.data) {
+          // console.log("fetcher data documents", fetcher.data);
+          setIsScrapingWebsiteModalOpen(false);
+          setLinks([]);
+        }
+      }
+    }
+
+    if (fetcher.state === "submitting" || fetcher.state === "loading") {
+      // loading
+    }
+
+    if (fetcher.state === "idle") {
+      // done
+    }
+  }, [fetcher.state]);
+
+  return (
+    <>
+      <fetcher.Form method="post">
+        <fieldset className="flex flex-row justify-between items-center gap-4">
+          <input type="hidden" name="action" value="getLinks" />
+          <Input
+            type="text"
+            name="url"
+            placeholder="Enter website url, e.g. https://example.com"
+            multiple
+            className="flex-1"
+          />
+          <Button type="submit" className="flex-none">
+            Scrape website
+          </Button>
+          <Button
+            variant={"outline"}
+            type="button"
+            onClick={() => {
+              setIsScrapingWebsiteModalOpen(false);
+              setIsViewingChunksModalOpen(true);
+            }}
+          >
+            View formatted chunks
+          </Button>
+          <Button
+            variant={"destructive"}
+            type="button"
+            // onClick={clearSessionId}
+          >
+            Clear session
+          </Button>
+        </fieldset>
+      </fetcher.Form>
+
+      <ScrapeWebsiteModal
+        open={isScrapingWebsiteModalOpen}
+        setOpen={setIsScrapingWebsiteModalOpen}
+        links={links}
+        setChunks={setChunks}
+      />
+      <ChunksModal
+        chunks={chunks}
+        open={isViewingChunksModalOpen}
+        setOpen={setIsViewingChunksModalOpen}
+      />
+    </>
+  );
+}
+
+// get rid of this. Scrape one url at a time
+function ScrapeWebsiteModal({
+  open,
+  setOpen,
+  links,
+}: {
+  open: boolean;
+  setOpen: (value: boolean) => void;
+  links: Document[];
+}) {
+  const cancelButtonRef = useRef(null);
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filteredDocuments, setFilteredDocuments] = useState(links);
+
+  useEffect(() => {
+    setFilteredDocuments(
+      links.filter((link) =>
+        link
+          .metadata!.sourceURL!.toLowerCase()
+          .includes(searchTerm.toLowerCase()),
+      ),
+    );
+  }, [searchTerm, links]);
+
+  // Handler for row selection
+  const onSelectionChanged = (params) => {
+    const selectedNodes = params.api.getSelectedNodes();
+    const selectedData = selectedNodes.map((node) => node.data);
+    setSelectedRows(selectedData);
+  };
+
+  return (
+    <Transition.Root show={open} as={Fragment}>
+      <Dialog
+        as="div"
+        className="relative z-10"
+        initialFocus={cancelButtonRef}
+        onClose={setOpen}
+      >
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+        </Transition.Child>
+
+        <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+              enterTo="opacity-100 translate-y-0 sm:scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+              leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+            >
+              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-3/5 sm:p-6 w-full">
+                <div className="sm:flex sm:items-start">
+                  <div className="m-3 text-center sm:text-left w-full">
+                    <Dialog.Title
+                      as="h3"
+                      className="text-base font-semibold leading-6 text-gray-900"
+                    >
+                      Select the links you would like to add
+                    </Dialog.Title>
+                    <div className="mt-2">
+                      <p className="text-sm text-gray-500">
+                        You can select the links you would like to add to your
+                        chatbot
+                      </p>
+                    </div>
+                    <Input
+                      type="text"
+                      className="mt-2"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Search by Source URL"
+                    />
+                    <p className="mt-2 text-sm text-gray-500">
+                      Currently showing {filteredDocuments.length} links
+                    </p>
+                    <div className="ag-theme-alpine w-full h-96 mt-2">
+                      <AgGridReact
+                        rowData={filteredDocuments}
+                        columnDefs={columnDefs}
+                        rowSelection="multiple"
+                        onSelectionChanged={onSelectionChanged}
+                        rowMultiSelectWithClick={true}
+                      ></AgGridReact>
+                    </div>
+                  </div>
+                </div>
+
+                <Form method="post" action="/playground">
+                  <input type="hidden" name="action" value="scrapeLinks" />
+                  <input
+                    type="hidden"
+                    name="links"
+                    value={JSON.stringify(selectedRows)}
+                  />
+                  <Button type="submit" variant={"default"}>
+                    Scrape
+                  </Button>
+                </Form>
+                <Button
+                  type="button"
+                  variant={"ghost"}
+                  onClick={() => setOpen(false)}
+                  ref={cancelButtonRef}
+                >
+                  Cancel
+                </Button>
+              </Dialog.Panel>
+            </Transition.Child>
           </div>
         </div>
-      </div>
-    </main>
+      </Dialog>
+    </Transition.Root>
   );
 }
