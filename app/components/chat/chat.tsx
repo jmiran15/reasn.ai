@@ -1,38 +1,64 @@
-export default function Chat() {
-  const { allPlaygroundChunks } = useLoaderData<typeof loader>();
+import { Chunk } from "@prisma/client";
+import { format } from "date-fns";
+import { Clipboard } from "lucide-react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
-  console.log("data");
+import { useScrollToBottom } from "~/hooks/use-scroll";
+import { cn } from "~/lib/utils";
+import { copyToClipboard } from "~/utils/clipboard";
+import { useMobileScreen } from "~/utils/mobile";
+import { selectionSystemPrompt, systemFinalContext } from "~/utils/prompts";
+import { Message } from "~/utils/types";
+
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "../ui/hover-card";
+import { Loading } from "../ui/loading";
+import Markdown from "../ui/markdown";
+import { ScrollArea } from "../ui/scroll-area";
+import { Separator } from "../ui/separator";
+import { useToast } from "../ui/use-toast";
+
+import { ChatAction } from "./chat-action";
+import ChatInput from "./chat-input";
+import { chat } from "~/utils/openai";
+
+const CHAT_PAGE_SIZE = 15;
+
+export default function Chat({ chunks }: { chunks: Chunk[] }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userInput, setUserInput] = useState("");
   const { scrollRef, setAutoScroll, scrollDomToBottom } = useScrollToBottom();
-  const [messages, setMessages] = useState<
-    { role: "user" | "assistant"; content: string }[]
-  >([
+  const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
       content: "Hello! How can I help you today?",
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(),
     },
   ]);
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!userInput || userInput === "") return false;
 
     const prevChatHistory = [
       ...messages,
-      { createdAt: new Date().toISOString(), content: userInput, role: "user" },
       {
-        createdAt: new Date().toISOString(),
+        role: "user" as const,
+        content: userInput,
+        createdAt: new Date(),
+      },
+      {
+        role: "assistant" as const,
         content: "",
-        role: "assistant",
         pending: true,
         userMessage: userInput,
         animate: true,
+        createdAt: new Date(),
       },
     ];
-
-    console.log("prevChatHistory", prevChatHistory);
 
     setMessages(prevChatHistory);
     setUserInput("");
@@ -40,30 +66,24 @@ export default function Chat() {
   };
 
   useEffect(() => {
-    // this is where we call our api for a chat response
     async function fetchReply() {
       const promptMessage =
         messages.length > 0 ? messages[messages.length - 1] : null;
       const remHistory = messages.length > 0 ? messages.slice(0, -1) : [];
-      const _chatHistory = [...remHistory];
 
       if (!promptMessage || !promptMessage?.userMessage) {
         setIsSubmitting(false);
         return false;
       }
 
-      // needs to be on the server? or just use apikey on frontend temp.
-      const chatResult = await chat(
-        promptMessage.userMessage,
-        allPlaygroundChunks,
-      );
+      const chatResult = await chat(promptMessage.userMessage, chunks);
 
       setMessages([
         ...remHistory,
         {
-          role: "assistant",
+          role: "assistant" as const,
           content: chatResult,
-          createdAt: new Date().toISOString(),
+          createdAt: new Date(),
         },
       ]);
 
@@ -71,7 +91,7 @@ export default function Chat() {
     }
 
     isSubmitting === true && fetchReply();
-  }, [isSubmitting, messages]);
+  }, [isSubmitting, messages, chunks]);
 
   const { toast } = useToast();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -122,10 +142,10 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex flex-col relative h-full">
+    <div className="flex flex-col relative grow">
       <ScrollArea
         ref={scrollRef}
-        className="flex-1 overflow-auto overflow-x-hidden relative overscroll-none pb-10 p-4"
+        className="flex-1 overflow-auto overflow-x-hidden relative overscroll-none pb-10 pt-4"
         onMouseDown={() => inputRef.current?.blur()}
         onScroll={(e) => onChatBodyScroll(e.currentTarget)}
         onTouchStart={() => {
@@ -165,14 +185,14 @@ export default function Chat() {
                         >
                           <Suspense fallback={<Loading />}>
                             <Markdown
-                              content={message.content}
+                              content={message.content ?? ""}
                               loading={
                                 // eslint-disable-next-line react/jsx-no-leaked-render
                                 isSubmitting && !isUser && message.pending
                               }
                               onDoubleClickCapture={() => {
                                 if (!isMobileScreen) return;
-                                setUserInput(message.content);
+                                setUserInput(message.content ?? "");
                               }}
                               parentRef={scrollRef}
                               defaultShow={i >= msgs.length - 6}
@@ -180,10 +200,7 @@ export default function Chat() {
                           </Suspense>
                         </div>
                         <div className="text-xs text-muted-foreground opacity-80 whitespace-nowrap text-right w-full box-border pointer-events-none z-[1]">
-                          {format(
-                            new Date(message.createdAt),
-                            "M/d/yyyy, h:mm:ss a",
-                          )}
+                          {format(message.createdAt, "M/d/yyyy, h:mm:ss a")}
                         </div>
                       </div>
                     </HoverCardTrigger>
@@ -199,7 +216,7 @@ export default function Chat() {
                               text={"Copy"}
                               icon={<Clipboard className="w-4 h-4" />}
                               onClick={() =>
-                                copyToClipboard(message.content, toast)
+                                copyToClipboard(message.content ?? "", toast)
                               }
                             />
                           </>

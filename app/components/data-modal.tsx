@@ -1,9 +1,16 @@
-export default function ChunksModal({
+import { Dialog, Transition } from "@headlessui/react";
+import { Chunk as ChunkType } from "@prisma/client";
+import { Fragment, useRef } from "react";
+
+import Chunk from "./data-card";
+import { Button } from "./ui/button";
+
+export default function Chunks({
   chunks,
   open,
   setOpen,
 }: {
-  chunks: PlaygroundChunk[];
+  chunks: ChunkType[];
   open: boolean;
   setOpen: (value: boolean) => void;
 }) {
@@ -59,7 +66,7 @@ export default function ChunksModal({
                   ) : (
                     <ol className="space-y-4 ">
                       {chunks.map((chunk) => (
-                        <ChunkCard key={chunk.id} chunk={chunk} />
+                        <Chunk key={chunk.id} chunk={chunk} />
                       ))}
                     </ol>
                   )}

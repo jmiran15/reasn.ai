@@ -55,7 +55,9 @@ async function scrapWithScrapingBee(url: string): Promise<string | null> {
   }
 }
 
-export async function scrapSingleUrl(urlToScrap: string): Promise<Document> {
+export async function scrapSingleUrl(
+  urlToScrap: string,
+): Promise<Document | null> {
   urlToScrap = urlToScrap.trim();
 
   try {
@@ -118,21 +120,4 @@ export async function scrapSingleUrl(urlToScrap: string): Promise<Document> {
       metadata: { sourceURL: urlToScrap },
     } as Document;
   }
-}
-
-async function getLinks(url: string): Promise<Document[]> {
-  return await getDocuments([url], "crawl", 100, true);
-}
-
-async function scrapeLinks(links: Document[]): Promise<Document[]> {
-  if (links.length === 0 || links === undefined) {
-    return [];
-  }
-
-  return await getDocuments(
-    links.map((link) => link.metadata!.sourceURL!),
-    "single_urls",
-    100,
-    false,
-  );
 }

@@ -23,3 +23,12 @@ export class Document {
     this.metadata = data.metadata || { sourceURL: "" };
   }
 }
+
+export interface Message {
+  role: "user" | "assistant";
+  content: string | null;
+  createdAt: Date;
+  pending?: boolean;
+  userMessage?: string;
+  animate?: boolean;
+}
