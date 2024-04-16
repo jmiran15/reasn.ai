@@ -5,7 +5,7 @@ import {
   MetaFunction,
   json,
 } from "@remix-run/node";
-import { Form, useLoaderData } from "@remix-run/react";
+import { Form, useActionData, useLoaderData } from "@remix-run/react";
 import cuid from "cuid";
 import { useState } from "react";
 
@@ -69,6 +69,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 export default function Index() {
   const data = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+
+  console.log("Action data: ", actionData);
 
   // console.log("Loader data: ", data);
 

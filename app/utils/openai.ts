@@ -16,7 +16,7 @@ const openai = new OpenAI({
   dangerouslyAllowBrowser: true,
 });
 
-const MODEL = "gpt-4-turbo";
+const MODEL = "gpt-4";
 
 export async function chat(
   query: string,
@@ -108,7 +108,7 @@ export async function processDocument(document: Document, userId: string) {
   const stringChunks = splitStringIntoChunks(document, 15000);
 
   for (const chunk of stringChunks) {
-    const formattedChunk = `{\n"raw_document":"${chunk}"\n}`;
+    const formattedChunk = JSON.stringify(chunk);
 
     const completion = await openai.chat.completions.create({
       messages: [
